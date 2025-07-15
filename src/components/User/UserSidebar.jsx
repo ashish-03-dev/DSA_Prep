@@ -61,14 +61,14 @@ function UserSidebar({ onClose }) {
           style={{
             width: '40px',
             height: '40px',
-            backgroundColor: goal !== 'learn' ? '#28a745' : '#007bff',
+            backgroundColor: goal === 'learn' ? '#28a745' : '#007bff',
             color: '#fff',
             border: 'none',
             transition: 'background-color 0.3s ease',
           }}
           title={`Switch to ${goal === 'learn' ? 'Practice' : 'Learning'} mode`}
         >
-          {goal === 'learn' ? 'P' : 'L'}
+          {goal === 'learn' ? 'L' : 'P'}
         </button>
       </div>
 
