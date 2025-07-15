@@ -3,8 +3,6 @@ import {
   getAuth,
   onAuthStateChanged,
   GoogleAuthProvider,
-  RecaptchaVerifier,
-  signInWithPhoneNumber,
   signInWithPopup,
 } from "firebase/auth";
 import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
@@ -56,31 +54,6 @@ export function FirebaseProvider({ children }) {
     return () => unsubscribe();
   }, []);
 
-  const setUpRecaptcha = async (containerId, phoneNumber) => {
-    const recaptchaVerifier = new RecaptchaVerifier(auth, containerId, {
-      size: "invisible",
-      callback: () => { },
-    });
-    const phone = `+91${phoneNumber}`;
-    const confirmationResult = await signInWithPhoneNumber(auth, phone, recaptchaVerifier);
-    return confirmationResult;
-  };
-
-  const verifyOtp = async (otp, confirmationResult) => {
-    if (!confirmationResult) {
-      throw new Error("No confirmation result available. Please request a new OTP.");
-    }
-    const result = await confirmationResult.confirm(otp);
-    setUser(result.user);
-    await createUserIfNotExists(result.user);
-    const userDocRef = doc(db, "users", result.user.uid);
-    const userDoc = await getDoc(userDocRef);
-    if (userDoc.exists()) {
-      setUserData(userDoc.data());
-    }
-    return result;
-  };
-
   const googleLogin = async () => {
     const result = await signInWithPopup(auth, googleProvider);
     setUser(result.user);
@@ -94,7 +67,7 @@ export function FirebaseProvider({ children }) {
   };
 
   return (
-    <FirebaseContext.Provider value={{ user, db, userData, setUserData, loading, setUpRecaptcha, verifyOtp, googleLogin }}>
+    <FirebaseContext.Provider value={{ user, db, userData, setUserData, loading, googleLogin }}>
       {children}
     </FirebaseContext.Provider>
   );
