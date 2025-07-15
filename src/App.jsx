@@ -6,6 +6,7 @@ import UserQuestionSolver from "./components/User/UserQuestionSolver";
 import UserLayout from "./components/User/UserLayout";
 import { FirestoreProvider } from "./context/FirestoreContext";
 import ProtectedRoute from './components/ProtectedRoute';
+import './App.css';
 
 function AppRoutes() {
   return (

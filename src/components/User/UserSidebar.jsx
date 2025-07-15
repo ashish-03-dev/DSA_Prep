@@ -1,6 +1,6 @@
 import { useFirestore } from '../../context/FirestoreContext';
 
-function UserSidebar() {
+function UserSidebar({ onClose }) {
   const {
     topics,
     questions,
@@ -44,6 +44,15 @@ function UserSidebar() {
 
   return (
     <div className="d-flex flex-column bg-light vh-100 p-3" style={{ position: 'sticky', top: 0 }}>
+      <div className="d-md-none d-flex justify-content-end mb-4">
+        <button
+          onClick={onClose}
+          className="btn bg-light border"
+        >
+          ← back
+        </button>
+      </div>
+
       <div className="d-flex justify-content-between align-items-center mb-3">
         <h4>{mode}</h4>
         <button

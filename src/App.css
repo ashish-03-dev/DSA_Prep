@@ -1,0 +1,19 @@
+/* Smooth sidebar transition */
+.transition-sidebar {
+  transition: transform 0.3s ease-in-out;
+}
+
+.translate-hide {
+  transform: translateX(-100%);
+}
+
+.translate-show {
+  transform: translateX(0);
+}
+
+@media (min-width: 768px) {
+  .translate-hide,
+  .translate-show {
+    transform: none !important;
+  }
+}

@@ -77,7 +77,7 @@ function UserQuestionSolver() {
   const isGeeksForGeeks = selectedQuestion.link?.includes('geeksforgeeks.org');
 
   return (
-    <div className="p-4 mt-3">
+    <div className="p-4">
       <h2 className="mb-4">Q {selectedQuestion.title}</h2>
 
       <div className="mb-3">
@@ -178,14 +178,14 @@ function UserQuestionSolver() {
         <span
           className="text-success cursor-pointer me-3"
           onClick={() => handleStatusUpdate('Completed')}
-          style={{ cursor: 'pointer' }}
+          style={{ cursor: 'pointer', userSFelect: 'none' }}
         >
           Mark as Completed
         </span>
         <span
           className="text-warning cursor-pointer"
           onClick={() => handleStatusUpdate('Review Later')}
-          style={{ cursor: 'pointer' }}
+          style={{ cursor: 'pointer', userSFelect: 'none' }}
         >
           Mark for Review Later
         </span>
