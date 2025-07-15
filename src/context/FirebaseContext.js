@@ -57,12 +57,7 @@ export function FirebaseProvider({ children }) {
   const googleLogin = async () => {
     const result = await signInWithPopup(auth, googleProvider);
     setUser(result.user);
-    await createUserIfNotExists(result.user);
-    const userDocRef = doc(db, "users", result.user.uid);
-    const userDoc = await getDoc(userDocRef);
-    if (userDoc.exists()) {
-      setUserData(userDoc.data());
-    }
+    await createUserIfNotExists(result.user); // this sets userData internally
     return result;
   };
 
