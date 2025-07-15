@@ -186,14 +186,14 @@ function UserQuestionSolver() {
         <span
           className="text-success cursor-pointer me-3"
           onClick={() => handleStatusUpdate('Completed')}
-          style={{ cursor: 'pointer', userSFelect: 'none' }}
+          style={{ cursor: 'pointer', userSelect: 'none' }}
         >
           Mark as Completed
         </span>
         <span
           className="text-warning cursor-pointer"
           onClick={() => handleStatusUpdate('Review Later')}
-          style={{ cursor: 'pointer', userSFelect: 'none' }}
+          style={{ cursor: 'pointer', userSelect: 'none' }}
         >
           Mark for Review Later
         </span>
