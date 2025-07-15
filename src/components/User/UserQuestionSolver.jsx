@@ -78,12 +78,12 @@ function UserQuestionSolver() {
 
   return (
     <div className="p-4">
-      <h2 className="mb-4">Q {selectedQuestion.title}</h2>
+      <h2 className="mb-4">{selectedQuestion.title}</h2>
 
       <div className="mb-3">
-        {(isLeetCode || isGeeksForGeeks) && (
+        {selectedQuestion.link && (
           <div className="mb-3">
-            {isLeetCode && (
+            {isLeetCode ? (
               <a
                 href={selectedQuestion.link}
                 target="_blank"
@@ -92,15 +92,23 @@ function UserQuestionSolver() {
               >
                 View on LeetCode
               </a>
-            )}
-            {isGeeksForGeeks && (
+            ) : isGeeksForGeeks ? (
               <a
                 href={selectedQuestion.link}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="btn btn-success"
+                className="btn btn-success me-2"
               >
                 View on GeeksforGeeks
+              </a>
+            ) : (
+              <a
+                href={selectedQuestion.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-outline-secondary"
+              >
+                View Link
               </a>
             )}
           </div>
