@@ -23,26 +23,30 @@ export function FirebaseProvider({ children }) {
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const createUserIfNotExists = async (firebaseUser) => {
+    const userDocRef = doc(db, "users", firebaseUser.uid);
+    const userDoc = await getDoc(userDocRef);
+
+    if (!userDoc.exists()) {
+      const newUserData = {
+        uid: firebaseUser.uid,
+        email: firebaseUser.email || "",
+        displayName: firebaseUser.displayName || "",
+        phoneNumber: firebaseUser.phoneNumber || "",
+        createdAt: new Date().toISOString(),
+        goal: "learn",
+      };
+      await setDoc(userDocRef, newUserData);
+      setUserData(newUserData);
+    } else {
+      setUserData(userDoc.data());
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
-        const userDocRef = doc(db, "users", currentUser.uid);
-        const userDoc = await getDoc(userDocRef);
-
-        if (!userDoc.exists()) {
-          const newUserData = {
-            uid: currentUser.uid,
-            email: currentUser.email || "",
-            displayName: currentUser.displayName || "",
-            phoneNumber: currentUser.phoneNumber || "",
-            createdAt: new Date().toISOString(),
-            goal: 'learn',
-          };
-          await setDoc(userDocRef, newUserData);
-          setUserData(newUserData);
-        } else {
-          setUserData(userDoc.data());
-        }
+        await createUserIfNotExists(currentUser);
       } else {
         setUserData(null);
       }
@@ -68,7 +72,7 @@ export function FirebaseProvider({ children }) {
     }
     const result = await confirmationResult.confirm(otp);
     setUser(result.user);
-
+    await createUserIfNotExists(result.user);
     const userDocRef = doc(db, "users", result.user.uid);
     const userDoc = await getDoc(userDocRef);
     if (userDoc.exists()) {
@@ -80,7 +84,7 @@ export function FirebaseProvider({ children }) {
   const googleLogin = async () => {
     const result = await signInWithPopup(auth, googleProvider);
     setUser(result.user);
-
+    await createUserIfNotExists(result.user);
     const userDocRef = doc(db, "users", result.user.uid);
     const userDoc = await getDoc(userDocRef);
     if (userDoc.exists()) {

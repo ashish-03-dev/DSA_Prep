@@ -24,7 +24,8 @@ export default function Login() {
         }
 
         try {
-            const result = await setUpRecaptcha("recaptcha-container", phone);
+            const fullPhone = `+91${phone.trim()}`;
+            const result = await setUpRecaptcha("recaptcha-container", fullPhone);
             setConfirmationResult(result); // 🔹 Save it for OTP verification
             setStep(2);
         } catch (err) {
