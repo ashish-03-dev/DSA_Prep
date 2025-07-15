@@ -79,8 +79,8 @@ export const FirestoreProvider = ({ children }) => {
         setSelectingQuestionLoading(false);
         return;
       }
+      handleUserQuestion(questionsData, progress, topicId);
 
-      handleUserQuestion(questionsData, progress);
     } catch (error) {
       console.error('Error fetching questions:', error);
       setError(error.message);
@@ -122,17 +122,11 @@ export const FirestoreProvider = ({ children }) => {
       return;
     }
 
-    if (question.topicId !== selectedTopicId) {
-      console.warn(`Selected question ${question.id} belongs to topic ${question.topicId}, but current topic is ${selectedTopicId}`);
-      setSelectedQuestion(null);
-      setSelectingQuestionLoading(false);
-      return;
-    }
-
     const progress = topicProgress?.[question.id] || {};
     setSelectedQuestion({ ...question, ...progress });
     setSelectingQuestionLoading(false);
   };
+
 
   const cleanupPlaceholder = async (topicId) => {
     if (!user?.uid || !goal || !topicId) return;
@@ -174,7 +168,7 @@ export const FirestoreProvider = ({ children }) => {
         setSelectedQuestion(prev => ({ ...prev, ...updatedProgress }));
       }
 
-      handleUserQuestion(updatedQuestions, newProgress);
+      handleUserQuestion(updatedQuestions, newProgress, topicId);
 
       const allFinished = updatedQuestions.every(q =>
         newProgress[q.id]?.status === 'Completed' || newProgress[q.id]?.status === 'Review Later'
@@ -234,23 +228,24 @@ export const FirestoreProvider = ({ children }) => {
         setSelectedQuestion(prev => ({ ...prev, status: undefined }));
       }
 
-      handleUserQuestion(updatedQuestions, updatedProgress);
+      handleUserQuestion(updatedQuestions, updatedProgress, topicId);
     } catch (error) {
       console.error('Failed to remove question status:', error);
       setError(error.message);
     }
   };
 
-  const handleUserQuestion = (questionList = questions, userProgress = topicProgress) => {
+  const handleUserQuestion = (questionList = questions, userProgress = topicProgress, topicIdOverride = selectedTopicId) => {
     const sortedQuestions = [...questionList].sort((a, b) => a.order - b.order);
     const nextQuestion = sortedQuestions.find(q => {
-      if (q.topicId !== selectedTopicId) return false;
+      if (q.topicId !== topicIdOverride) return false;
       const status = userProgress[q.id]?.status;
       return !status || status === 'Unsolved';
-    }) || sortedQuestions.find(q => q.topicId === selectedTopicId);
+    }) || sortedQuestions.find(q => q.topicId === topicIdOverride);
 
     handleSelectQuestion(nextQuestion);
   };
+
 
   useEffect(() => {
     if (userData?.goal) {
@@ -279,7 +274,7 @@ export const FirestoreProvider = ({ children }) => {
           setQuestions([]);
           setSelectedQuestion(null);
           await fetchQuestions(lastTopicForGoal);
-        } 
+        }
         return;
       }
 
