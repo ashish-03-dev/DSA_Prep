@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, setDoc, updateDoc, deleteDoc, doc, query, orderBy, deleteField } from 'firebase/firestore';
+import { collection, getDocs, setDoc, updateDoc, deleteDoc, doc, query, orderBy, deleteField } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useFirebase } from './FirebaseContext';
 
@@ -18,6 +18,7 @@ export const FirestoreProvider = ({ children }) => {
   const [selectedTopicId, setSelectedTopicId] = useState(null);
   const [selectedQuestion, setSelectedQuestion] = useState(null);
   const [error, setError] = useState(null);
+  const [isTransitioning, setIsTransitioning] = useState(false);
 
   const updateUserData = async (newData) => {
     if (!user) return;
@@ -54,6 +55,9 @@ export const FirestoreProvider = ({ children }) => {
 
   const fetchQuestions = async (topicId) => {
     try {
+      setSelectingQuestionLoading(true);
+      setQuestions([]);
+      setSelectedQuestion(null);
       const collectionName = goal === 'learn' ? 'learn' : 'practice';
       const q = query(
         collection(db, collectionName, topicId, 'questions'),
@@ -61,28 +65,27 @@ export const FirestoreProvider = ({ children }) => {
       );
 
       const questionsSnap = await getDocs(q);
-      const progress = await fetchUserProgressByTopic(topicId); // fresh progress
+      const progress = await fetchUserProgressByTopic(topicId);
 
-      const questionsData = questionsSnap.docs.map(doc => {
-        const question = { id: doc.id, topicId, ...doc.data() };
-        return {
-          ...question,
-          ...(progress?.[doc.id] || {})
-        };
-      });
+      const questionsData = questionsSnap.docs.map(doc => ({
+        id: doc.id,
+        topicId,
+        ...doc.data(),
+        ...(progress?.[doc.id] || {})
+      }));
 
       setQuestions(questionsData);
-
       if (questionsData.length === 0) {
         setSelectingQuestionLoading(false);
         return;
       }
 
-      handleUserQuestion(questionsData, progress); // <- fixed
+      handleUserQuestion(questionsData, progress);
     } catch (error) {
       console.error('Error fetching questions:', error);
       setError(error.message);
-      return [];
+      setQuestions([]);
+      setSelectingQuestionLoading(false);
     }
   };
 
@@ -94,62 +97,50 @@ export const FirestoreProvider = ({ children }) => {
     }
 
     try {
-      const questionsCollectionRef = collection(
-        db,
-        'users',
-        user.uid,
-        'progress',
-        goal,
-        topicId // Subcollection (e.g., Arrays)
-      );
-
+      const questionsCollectionRef = collection(db, 'users', user.uid, 'progress', goal, topicId);
       const progressSnap = await getDocs(questionsCollectionRef);
 
       const progressData = Object.fromEntries(
-        progressSnap.docs.map((doc) => [doc.id, doc.data()])
+        progressSnap.docs
+          .filter(doc => doc.id !== 'placeholder')
+          .map(doc => [doc.id, doc.data()])
       );
 
       setTopicProgress(progressData);
       return progressData;
     } catch (error) {
-      console.error(`Error fetching progress for topic ${topicId}:`, {
-        code: error.code,
-        message: error.message,
-        stack: error.stack,
-      });
+      console.error(`Error fetching progress for topic ${topicId}:`, error);
       setTopicProgress({});
       return {};
     }
   };
 
   const handleSelectQuestion = (question) => {
-    if (!question?.id) return;
+    if (!question?.id) {
+      setSelectedQuestion(null);
+      setSelectingQuestionLoading(false);
+      return;
+    }
+
+    if (question.topicId !== selectedTopicId) {
+      console.warn(`Selected question ${question.id} belongs to topic ${question.topicId}, but current topic is ${selectedTopicId}`);
+      setSelectedQuestion(null);
+      setSelectingQuestionLoading(false);
+      return;
+    }
 
     const progress = topicProgress?.[question.id] || {};
-
-    const enrichedQuestion = {
-      ...question,
-      ...progress, // includes saved notes, codes, status
-    };
-
-    setSelectedQuestion(enrichedQuestion);
+    setSelectedQuestion({ ...question, ...progress });
     setSelectingQuestionLoading(false);
   };
 
-  const addQuestion = async (topicId, question) => {
-    setLoading(true);
+  const cleanupPlaceholder = async (topicId) => {
+    if (!user?.uid || !goal || !topicId) return;
     try {
-      const collectionName = goal === 'learn' ? 'learn' : 'practice';
-      const docRef = await addDoc(collection(db, collectionName, topicId, 'questions'), question);
-      const newQuestion = { id: docRef.id, topicId, ...question };
-      setQuestions(prev => [...prev, newQuestion]);
-      return newQuestion;
+      const placeholderDocRef = doc(db, 'users', user.uid, 'progress', goal, topicId, 'placeholder');
+      await deleteDoc(placeholderDocRef);
     } catch (error) {
-      console.error('Error adding question:', error);
-      setError(error.message);
-      throw error;
-    } finally {
-      setLoading(false);
+      console.warn('Error cleaning up placeholder:', error);
     }
   };
 
@@ -161,19 +152,11 @@ export const FirestoreProvider = ({ children }) => {
     }
 
     try {
-      const questionDocRef = doc(
-        db,
-        'users',
-        user.uid,
-        'progress',
-        goal,
-        topicId,
-        questionId
-      );
+      await cleanupPlaceholder(topicId);
 
+      const questionDocRef = doc(db, 'users', user.uid, 'progress', goal, topicId, questionId);
       const updatedProgress = { status, codes, notes };
 
-      // Firestore update
       await setDoc(questionDocRef, updatedProgress, { merge: true });
 
       const updatedQuestions = questions.map(q =>
@@ -181,196 +164,174 @@ export const FirestoreProvider = ({ children }) => {
       );
       setQuestions(updatedQuestions);
 
-      // Update topicProgress
       const newProgress = {
         ...topicProgress,
-        [questionId]: {
-          ...(topicProgress[questionId] || {}),
-          ...updatedProgress,
-        }
+        [questionId]: { ...(topicProgress[questionId] || {}), ...updatedProgress }
       };
       setTopicProgress(newProgress);
 
-      // If selected question matches, update its state too
       if (selectedQuestion?.id === questionId) {
-        setSelectedQuestion(prev => ({
-          ...prev,
-          ...updatedProgress
-        }));
+        setSelectedQuestion(prev => ({ ...prev, ...updatedProgress }));
       }
 
-      setTimeout(() => {
-        handleUserQuestion(updatedQuestions, newProgress);
-      }, 500);
+      handleUserQuestion(updatedQuestions, newProgress);
 
-      // Check if it's the last question of topic and all are solved
-      const allSolved = updatedQuestions.every(q =>
-        newProgress[q.id]?.status === 'Solved'
+      const allFinished = updatedQuestions.every(q =>
+        newProgress[q.id]?.status === 'Completed' || newProgress[q.id]?.status === 'Review Later'
       );
 
-      if (allSolved) {
-        const currentTopic = topics.find(t => t.id === topicId);
-        if (currentTopic) {
-          const sortedTopics = [...topics].sort((a, b) => a.order - b.order);
-          const currentIndex = sortedTopics.findIndex(t => t.id === topicId);
-          const nextTopic = sortedTopics[currentIndex + 1];
+      if (allFinished && !isTransitioning) {
+        setIsTransitioning(true);
+        const sortedTopics = [...topics].sort((a, b) => a.order - b.order);
+        const currentIndex = sortedTopics.findIndex(t => t.id === topicId);
+        const nextTopic = sortedTopics[currentIndex + 1];
 
-          if (nextTopic) {
-            const nextTopicId = nextTopic.id;
+        if (nextTopic) {
+          const nextTopicId = nextTopic.id;
+          const nextTopicDocRef = doc(db, 'users', user.uid, 'progress', goal, nextTopicId, 'placeholder');
+          await setDoc(nextTopicDocRef, { initialized: true });
 
-            // Update user's progress doc to include next topic (just initialize)
-            const userDocRef = doc(db, 'users', user.uid);
-            const userProgressUpdate = {
-              [`progress.${goal}.${nextTopicId}`]: {} // Add empty progress record
-            };
+          await updateUserData({
+            lastTopic: {
+              ...userData.lastTopic,
+              [goal]: nextTopicId
+            }
+          });
 
-            await updateDoc(userDocRef, userProgressUpdate);
-
-            // Optionally: auto-select next topic
-            setSelectedTopicId(nextTopicId);
-          }
+          setSelectedTopicId(nextTopicId);
+          setQuestions([]);
+          setSelectedQuestion(null);
+          await fetchQuestions(nextTopicId);
         }
+        setIsTransitioning(false);
       }
-
     } catch (error) {
-      console.error(`Error updating question ${questionId} in topic ${topicId}:`, {
-        code: error.code,
-        message: error.message,
-        stack: error.stack,
-      });
+      console.error(`Error updating question ${questionId} in topic ${topicId}:`, error);
       setError(error.message);
+      setIsTransitioning(false);
     }
   };
 
- const removeQuestionStatus = async (topicId, questionId) => {
-  if (!user?.uid || !goal || !topicId || !questionId) return;
+  const removeQuestionStatus = async (topicId, questionId) => {
+    if (!user?.uid || !goal || !topicId || !questionId) return;
 
-  try {
-    const questionDocRef = doc(
-      db,
-      'users',
-      user.uid,
-      'progress',
-      goal,
-      topicId,
-      questionId
-    );
-
-    await updateDoc(questionDocRef, {
-      status: deleteField()
-    });
-
-    // Update local state
-    const updatedQuestions = questions.map(q =>
-      q.id === questionId ? { ...q, status: undefined } : q
-    );
-    setQuestions(updatedQuestions);
-
-    const updatedProgress = { ...topicProgress };
-    if (updatedProgress[questionId]) {
-      delete updatedProgress[questionId].status;
-    }
-    setTopicProgress(updatedProgress);
-
-    if (selectedQuestion?.id === questionId) {
-      setSelectedQuestion(prev => ({
-        ...prev,
-        status: undefined,
-      }));
-    }
-
-    setTimeout(() => {
-      handleUserQuestion(updatedQuestions, updatedProgress);
-    }, 300);
-
-  } catch (error) {
-    console.error('Failed to remove question status:', error);
-    setError(error.message);
-  }
-};
-
-
-  const deleteQuestion = async (topicId, id) => {
-    setLoading(true);
     try {
-      const collectionName = goal === 'learn' ? 'learn' : 'practice';
-      await deleteDoc(doc(db, collectionName, topicId, 'questions', id));
-      setQuestions(prev => prev.filter(q => q.id !== id));
-      if (selectedQuestion?.id === id) {
-        setSelectedQuestion(null);
+      const questionDocRef = doc(db, 'users', user.uid, 'progress', goal, topicId, questionId);
+      await updateDoc(questionDocRef, { status: deleteField() });
+
+      const updatedQuestions = questions.map(q =>
+        q.id === questionId ? { ...q, status: undefined } : q
+      );
+      setQuestions(updatedQuestions);
+
+      const updatedProgress = { ...topicProgress };
+      if (updatedProgress[questionId]) {
+        delete updatedProgress[questionId].status;
       }
+      setTopicProgress(updatedProgress);
+
+      if (selectedQuestion?.id === questionId) {
+        setSelectedQuestion(prev => ({ ...prev, status: undefined }));
+      }
+
+      handleUserQuestion(updatedQuestions, updatedProgress);
     } catch (error) {
-      console.error('Error deleting question:', error);
+      console.error('Failed to remove question status:', error);
       setError(error.message);
-      throw error;
-    } finally {
-      setLoading(false);
     }
   };
 
   const handleUserQuestion = (questionList = questions, userProgress = topicProgress) => {
     const sortedQuestions = [...questionList].sort((a, b) => a.order - b.order);
-
-    const nextQuestion = sortedQuestions.find((q) => {
+    const nextQuestion = sortedQuestions.find(q => {
+      if (q.topicId !== selectedTopicId) return false;
       const status = userProgress[q.id]?.status;
       return !status || status === 'Unsolved';
-    }) || sortedQuestions[0];
+    }) || sortedQuestions.find(q => q.topicId === selectedTopicId);
 
-    handleSelectQuestion(nextQuestion || null);
+    handleSelectQuestion(nextQuestion);
   };
 
-  // First set the goal when userData changes
   useEffect(() => {
     if (userData?.goal) {
       setGoal(userData.goal);
     }
   }, [userData]);
 
-  // Then, when goal is set, fetch topics
   useEffect(() => {
     const loadTopics = async () => {
-      if (!userData || !goal) return;
-      const topicsData = await fetchTopics();
+      if (!userData || !goal || !user?.uid) {
+        return;
+      }
 
-      const userProgressTopics = userData.progress?.[goal] || {};
+      const topicsData = await fetchTopics();
+      if (topicsData.length === 0) {
+        console.warn('No topics available for goal:', goal);
+        setError('No topics available');
+        return;
+      }
+
+      const lastTopicForGoal = userData.lastTopic?.[goal];
+
+      if (lastTopicForGoal && topicsData.some(t => t.id === lastTopicForGoal)) {
+        if (lastTopicForGoal !== selectedTopicId) {
+          setSelectedTopicId(lastTopicForGoal);
+          setQuestions([]);
+          setSelectedQuestion(null);
+          await fetchQuestions(lastTopicForGoal);
+        } 
+        return;
+      }
+
+      if (selectedTopicId && topicsData.some(t => t.id === selectedTopicId)) {
+        console.log(`Topic already selected: ${selectedTopicId}`);
+        return;
+      }
 
       let defaultTopicId = null;
+      const userProgressTopics = userData.progress?.[goal] || {};
 
       const validUserTopics = Object.keys(userProgressTopics)
         .map(topicId => {
           const topicMeta = topicsData.find(t => t.id === topicId);
-          if (!topicMeta) return null;
-          return {
-            id: topicId,
-            order: topicMeta.order ?? 0,
-          };
+          return topicMeta ? { id: topicId, order: topicMeta.order ?? 0 } : null;
         })
         .filter(Boolean);
 
       if (validUserTopics.length > 0) {
-        defaultTopicId = validUserTopics.sort((a, b) => b.order - a.order)[0]?.id;
-      } else if (topicsData.length > 0) {
+        defaultTopicId = validUserTopics.sort((a, b) => a.order - b.order).pop().id;
+      } else {
         defaultTopicId = topicsData[0]?.id;
+        if (defaultTopicId) {
+          const firstTopicDocRef = doc(db, 'users', user.uid, 'progress', goal, defaultTopicId, 'placeholder');
+          await setDoc(firstTopicDocRef, { initialized: true });
+          await updateUserData({
+            lastTopic: {
+              ...userData.lastTopic,
+              [goal]: defaultTopicId
+            }
+          });
+        }
       }
 
-      if (defaultTopicId) {
+      if (defaultTopicId && defaultTopicId !== selectedTopicId) {
         setSelectedTopicId(defaultTopicId);
+        setQuestions([]);
+        setSelectedQuestion(null);
+        await fetchQuestions(defaultTopicId);
+      } else if (!defaultTopicId) {
+        setError('Unable to select a default topic');
       }
     };
 
     loadTopics();
-  }, [goal, userData]);
+  }, [goal, userData, user?.uid]);
 
   useEffect(() => {
-    const loadQuestions = async () => {
-      if (!selectedTopicId || !userData) return;
-      setTopicProgress({});
-      await fetchQuestions(selectedTopicId);
-    };
-
-    loadQuestions();
+    if (!selectedTopicId) return;
+    setTopicProgress({});
+    fetchQuestions(selectedTopicId);
   }, [selectedTopicId]);
-
 
   const value = {
     topics,
@@ -389,9 +350,6 @@ export const FirestoreProvider = ({ children }) => {
     updateUserData,
     fetchTopics,
     fetchQuestions,
-    addQuestion,
-    updateUserQuestion,
-    deleteQuestion,
     updateUserQuestion,
     removeQuestionStatus,
   };
