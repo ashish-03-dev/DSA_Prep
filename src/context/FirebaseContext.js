@@ -56,14 +56,17 @@ export function FirebaseProvider({ children }) {
     return () => unsubscribe();
   }, []);
 
-  const setUpRecaptcha = async (containerId, phoneNumber) => {
-    const recaptchaVerifier = new RecaptchaVerifier(auth, containerId, {
-      size: "invisible",
-      callback: () => { },
-    });
-    const phone = `+91${phoneNumber}`;
-    const confirmationResult = await signInWithPhoneNumber(auth, phone, recaptchaVerifier);
-    return confirmationResult;
+  const setUpRecaptcha = async (elementId, phoneNumber) => {
+    if (!window.recaptchaVerifier) {
+      window.recaptchaVerifier = new RecaptchaVerifier(
+        elementId,
+        { size: "invisible", callback: () => { } },
+        auth
+      );
+    }
+
+    const appVerifier = window.recaptchaVerifier;
+    return signInWithPhoneNumber(auth, phoneNumber, appVerifier);
   };
 
   const verifyOtp = async (otp, confirmationResult) => {
