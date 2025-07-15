@@ -22,8 +22,6 @@ export function FirebaseProvider({ children }) {
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
-  // In FirebaseProvider
-  const [confirmationResult, setConfirmationResult] = useState(null);
 
   const createUserIfNotExists = async (firebaseUser) => {
     const userDocRef = doc(db, "users", firebaseUser.uid);
@@ -58,26 +56,14 @@ export function FirebaseProvider({ children }) {
     return () => unsubscribe();
   }, []);
 
-  const setUpRecaptcha = async (elementId, phoneNumber) => {
-    const container = document.getElementById(elementId);
-    if (!container) throw new Error(`Container ${elementId} not found`);
-
-    if (window.recaptchaVerifier) {
-      window.recaptchaVerifier.clear();
-      window.recaptchaVerifier = null;
-      container.innerHTML = "";
-    }
-
-    window.recaptchaVerifier = new RecaptchaVerifier(
-      elementId,
-      { size: "invisible", callback: () => { }, "expired-callback": () => { throw new Error("reCAPTCHA expired"); } },
-      auth
-    );
-    await window.recaptchaVerifier.render();
-    const appVerifier = window.recaptchaVerifier;
-    const result = await signInWithPhoneNumber(auth, phoneNumber, appVerifier);
-    setConfirmationResult(result);
-    return result;
+  const setUpRecaptcha = async (containerId, phoneNumber) => {
+    const recaptchaVerifier = new RecaptchaVerifier(auth, containerId, {
+      size: "invisible",
+      callback: () => { },
+    });
+    const phone = `+91${phoneNumber}`;
+    const confirmationResult = await signInWithPhoneNumber(auth, phone, recaptchaVerifier);
+    return confirmationResult;
   };
 
   const verifyOtp = async (otp, confirmationResult) => {
