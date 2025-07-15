@@ -56,30 +56,15 @@ export function FirebaseProvider({ children }) {
     return () => unsubscribe();
   }, []);
 
-
-const setUpRecaptcha = (containerId, phoneNumber) => {
-  return new Promise((resolve, reject) => {
-    if (!window.recaptchaVerifier) {
-      window.recaptchaVerifier = new RecaptchaVerifier(
-        containerId,
-        {
-          size: "invisible",
-          callback: () => {},
-          "expired-callback": () => {
-            console.log("reCAPTCHA expired. Resetting...");
-          },
-        },
-        auth
-      );
-    }
-
-    const appVerifier = window.recaptchaVerifier;
-    signInWithPhoneNumber(auth, `+91${phoneNumber}`, appVerifier)
-      .then((confirmationResult) => resolve(confirmationResult))
-      .catch((error) => reject(error));
-  });
-};
-
+  const setUpRecaptcha = async (containerId, phoneNumber) => {
+    const recaptchaVerifier = new RecaptchaVerifier(auth, containerId, {
+      size: "invisible",
+      callback: () => { },
+    });
+    const phone = `+91${phoneNumber}`;
+    const confirmationResult = await signInWithPhoneNumber(auth, phone, recaptchaVerifier);
+    return confirmationResult;
+  };
 
   const verifyOtp = async (otp, confirmationResult) => {
     if (!confirmationResult) {
