@@ -12,35 +12,32 @@ export default function Login() {
   const navigate = useNavigate();
   const { setUpRecaptcha, verifyOtp, googleLogin } = useFirebase();
 
-  const handlePhoneSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-
-    if (!/^[0-9]{10}$/.test(phone.trim())) {
-      alert("Please enter a valid 10-digit phone number.");
-      setLoading(false);
-      return;
-    }
-
-    try {
-      const formattedPhone = `+91${phone.trim()}`;
-      const result = await setUpRecaptcha("recaptcha-container", formattedPhone);
-      setConfirmationResult(result);
-      setStep(2);
-    } catch (err) {
-      console.error("OTP Send Error:", err.message);
-      alert(`Failed to send OTP: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
+ const handlePhoneSubmit = async (e) => {
+  e.preventDefault();
+  setLoading(true);
+  if (!/^[0-9]{10}$/.test(phone.trim())) {
+    alert("Please enter a valid 10-digit phone number.");
+    setLoading(false);
+    return;
+  }
+  try {
+    const formattedPhone = `+91${phone.trim()}`;
+    await setUpRecaptcha("recaptcha-container", formattedPhone); // No need to store result locally
+    setStep(2);
+  } catch (err) {
+    console.error("OTP Send Error:", err.message);
+    alert(`Failed to send OTP: ${err.message}`);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleOtpSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      await verifyOtp(otp, confirmationResult);
+      await verifyOtp(otp);
       navigate("/user");
     } catch (err) {
       const errorMessages = {
