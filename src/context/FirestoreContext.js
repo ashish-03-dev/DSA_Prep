@@ -34,16 +34,21 @@ export const FirestoreProvider = ({ children }) => {
   const fetchTopicNames = async () => {
     try {
       if (!goal) return [];
-      const topicsCollection = collection(db, 'topics', goal, 'topics');
-      const topicsSnap = await getDocs(query(topicsCollection, orderBy('order')));
-      const topicsData = topicsSnap.docs.map(doc => ({
-        id: doc.id,
-        name: doc.data().name,
-        order: doc.data().order
-      }));
-      
-      setTopics(topicsData);
-      return topicsData;
+
+      const goalDocRef = doc(db, 'topics', goal);
+      const goalSnap = await getDoc(goalDocRef);
+
+      if (!goalSnap.exists()) {
+        throw new Error(`Goal '${goal}' document not found`);
+      }
+
+      const topicsArray = goalSnap.data().topics || [];
+
+      // Optional: sort by order if not already sorted
+      topicsArray.sort((a, b) => a.order - b.order);
+
+      setTopics(topicsArray);
+      return topicsArray;
     } catch (error) {
       console.error('Error fetching topic names:', error);
       setError(error.message);
@@ -59,11 +64,11 @@ export const FirestoreProvider = ({ children }) => {
       setSelectingQuestionLoading(true);
       setQuestions([]);
       setSelectedQuestion(null);
-      
+
       const collectionName = goal === 'learn' ? 'learn' : 'practice';
       const topicDocRef = doc(db, collectionName, topicId);
       const topicSnap = await getDoc(topicDocRef);
-      
+
       if (!topicSnap.exists()) {
         throw new Error(`Topic ${topicId} not found`);
       }
@@ -182,9 +187,6 @@ export const FirestoreProvider = ({ children }) => {
 
         if (nextTopic) {
           const nextTopicId = nextTopic.id;
-          const nextTopicDocRef = doc(db, 'users', user.uid, 'progress', goal, nextTopicId, 'placeholder');
-          await setDoc(nextTopicDocRef, { initialized: true });
-
           await updateUserData({
             lastTopic: {
               ...userData.lastTopic,
@@ -259,63 +261,16 @@ export const FirestoreProvider = ({ children }) => {
       }
 
       const topicsData = await fetchTopicNames();
-      if (topicsData.length === 0) {
-        console.warn('No topics available for goal:', goal);
-        setError('No topics available');
-        return;
-      }
 
       const lastTopicForGoal = userData.lastTopic?.[goal];
+      const validTopicId = topicsData.some(t => t.id === lastTopicForGoal)
+        ? lastTopicForGoal
+        : topicsData[0]?.id;
 
-      if (lastTopicForGoal && topicsData.some(t => t.id === lastTopicForGoal)) {
-        if (lastTopicForGoal !== selectedTopicId) {
-          setSelectedTopicId(lastTopicForGoal);
-          setQuestions([]);
-          setSelectedQuestion(null);
-          await fetchTopicDetails(lastTopicForGoal);
-        }
-        return;
-      }
-
-      if (selectedTopicId && topicsData.some(t => t.id === selectedTopicId)) {
-        console.log(`Topic already selected: ${selectedTopicId}`);
-        return;
-      }
-
-      let defaultTopicId = null;
-      const userProgressTopics = userData.progress?.[goal] || {};
-
-      const validUserTopics = Object.keys(userProgressTopics)
-        .map(topicId => {
-          const topicMeta = topicsData.find(t => t.id === topicId);
-          return topicMeta ? { id: topicId, order: topicMeta.order ?? 0 } : null;
-        })
-        .filter(Boolean);
-
-      if (validUserTopics.length > 0) {
-        defaultTopicId = validUserTopics.sort((a, b) => a.order - b.order).pop().id;
-      } else {
-        defaultTopicId = topicsData[0]?.id;
-        if (defaultTopicId) {
-          const firstTopicDocRef = doc(db, 'users', user.uid, 'progress', goal, defaultTopicId, 'placeholder');
-          await setDoc(firstTopicDocRef, { initialized: true });
-          await updateUserData({
-            lastTopic: {
-              ...userData.lastTopic,
-              [goal]: defaultTopicId
-            }
-          });
-        }
-      }
-
-      if (defaultTopicId && defaultTopicId !== selectedTopicId) {
-        setSelectedTopicId(defaultTopicId);
-        setQuestions([]);
-        setSelectedQuestion(null);
-        await fetchTopicDetails(defaultTopicId);
-      } else if (!defaultTopicId) {
-        setError('Unable to select a default topic');
-      }
+      setSelectedTopicId(validTopicId);
+      setQuestions([]);
+      setSelectedQuestion(null);
+      await fetchTopicDetails(validTopicId);
     };
 
     loadTopics();
