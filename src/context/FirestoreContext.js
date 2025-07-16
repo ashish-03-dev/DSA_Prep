@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { collection, getDocs, setDoc, updateDoc, deleteDoc, doc, query, orderBy, deleteField } from 'firebase/firestore';
+import { collection, getDocs, setDoc, updateDoc, deleteDoc, doc, query, orderBy, deleteField, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useFirebase } from './FirebaseContext';
 
@@ -38,7 +38,8 @@ export const FirestoreProvider = ({ children }) => {
       const topicsSnap = await getDocs(collection(db, collectionName));
       const topicsData = topicsSnap.docs.map(doc => ({
         id: doc.id,
-        ...doc.data()
+        ...doc.data(),
+        questions: doc.data().questions || [] // Ensure questions field exists
       })).sort((a, b) => a.order - b.order);
 
       setTopics(topicsData);
@@ -58,21 +59,22 @@ export const FirestoreProvider = ({ children }) => {
       setSelectingQuestionLoading(true);
       setQuestions([]);
       setSelectedQuestion(null);
+      
       const collectionName = goal === 'learn' ? 'learn' : 'practice';
-      const q = query(
-        collection(db, collectionName, topicId, 'questions'),
-        orderBy('order', 'asc')
-      );
+      const topicDocRef = doc(db, collectionName, topicId);
+      const topicSnap = await getDoc(topicDocRef); // Use getDoc instead of get()
+      
+      if (!topicSnap.exists()) {
+        throw new Error(`Topic ${topicId} not found`);
+      }
 
-      const questionsSnap = await getDocs(q);
       const progress = await fetchUserProgressByTopic(topicId);
-
-      const questionsData = questionsSnap.docs.map(doc => ({
-        id: doc.id,
+      const questionsData = (topicSnap.data().questions || []).map(question => ({
+        id: question.id,
         topicId,
-        ...doc.data(),
-        ...(progress?.[doc.id] || {})
-      }));
+        ...question,
+        ...(progress?.[question.id] || {})
+      })).sort((a, b) => a.order - b.order);
 
       setQuestions(questionsData);
       if (questionsData.length === 0) {
@@ -126,7 +128,6 @@ export const FirestoreProvider = ({ children }) => {
     setSelectedQuestion({ ...question, ...progress });
     setSelectingQuestionLoading(false);
   };
-
 
   const cleanupPlaceholder = async (topicId) => {
     if (!user?.uid || !goal || !topicId) return;
@@ -245,7 +246,6 @@ export const FirestoreProvider = ({ children }) => {
 
     handleSelectQuestion(nextQuestion);
   };
-
 
   useEffect(() => {
     if (userData?.goal) {
