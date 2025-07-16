@@ -71,8 +71,8 @@ function UserSidebar({ onClose }) {
         </button>
       </div>
 
-      <div className="d-flex justify-content-between align-items-center mb-3">
-        <h4>{mode}</h4>
+      <div className="d-flex justify-content-between align-items-center mb-5">
+        <h4 className='mb-0'>{mode}</h4>
         <button
           onClick={toggleMode}
           className="btn rounded-circle p-0 d-flex align-items-center justify-content-center"
