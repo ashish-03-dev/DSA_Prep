@@ -4,7 +4,6 @@ import { db } from '../firebase';
 import { useFirebase } from './FirebaseContext';
 
 const FirestoreContext = createContext();
-
 export const useFirestore = () => useContext(FirestoreContext);
 
 export const FirestoreProvider = ({ children }) => {
@@ -32,20 +31,21 @@ export const FirestoreProvider = ({ children }) => {
     }
   };
 
-  const fetchTopics = async () => {
+  const fetchTopicNames = async () => {
     try {
-      const collectionName = goal === 'learn' ? 'learn' : 'practice';
-      const topicsSnap = await getDocs(collection(db, collectionName));
+      if (!goal) return [];
+      const topicsCollection = collection(db, 'topics', goal, 'topics');
+      const topicsSnap = await getDocs(query(topicsCollection, orderBy('order')));
       const topicsData = topicsSnap.docs.map(doc => ({
         id: doc.id,
-        ...doc.data(),
-        questions: doc.data().questions || [] // Ensure questions field exists
-      })).sort((a, b) => a.order - b.order);
-
+        name: doc.data().name,
+        order: doc.data().order
+      }));
+      
       setTopics(topicsData);
       return topicsData;
     } catch (error) {
-      console.error('Error fetching topics:', error);
+      console.error('Error fetching topic names:', error);
       setError(error.message);
       setTopics([]);
       return [];
@@ -54,7 +54,7 @@ export const FirestoreProvider = ({ children }) => {
     }
   };
 
-  const fetchQuestions = async (topicId) => {
+  const fetchTopicDetails = async (topicId) => {
     try {
       setSelectingQuestionLoading(true);
       setQuestions([]);
@@ -62,7 +62,7 @@ export const FirestoreProvider = ({ children }) => {
       
       const collectionName = goal === 'learn' ? 'learn' : 'practice';
       const topicDocRef = doc(db, collectionName, topicId);
-      const topicSnap = await getDoc(topicDocRef); // Use getDoc instead of get()
+      const topicSnap = await getDoc(topicDocRef);
       
       if (!topicSnap.exists()) {
         throw new Error(`Topic ${topicId} not found`);
@@ -82,9 +82,8 @@ export const FirestoreProvider = ({ children }) => {
         return;
       }
       handleUserQuestion(questionsData, progress, topicId);
-
     } catch (error) {
-      console.error('Error fetching questions:', error);
+      console.error('Error fetching topic details:', error);
       setError(error.message);
       setQuestions([]);
       setSelectingQuestionLoading(false);
@@ -196,7 +195,7 @@ export const FirestoreProvider = ({ children }) => {
           setSelectedTopicId(nextTopicId);
           setQuestions([]);
           setSelectedQuestion(null);
-          await fetchQuestions(nextTopicId);
+          await fetchTopicDetails(nextTopicId);
         }
         setIsTransitioning(false);
       }
@@ -259,7 +258,7 @@ export const FirestoreProvider = ({ children }) => {
         return;
       }
 
-      const topicsData = await fetchTopics();
+      const topicsData = await fetchTopicNames();
       if (topicsData.length === 0) {
         console.warn('No topics available for goal:', goal);
         setError('No topics available');
@@ -273,7 +272,7 @@ export const FirestoreProvider = ({ children }) => {
           setSelectedTopicId(lastTopicForGoal);
           setQuestions([]);
           setSelectedQuestion(null);
-          await fetchQuestions(lastTopicForGoal);
+          await fetchTopicDetails(lastTopicForGoal);
         }
         return;
       }
@@ -313,7 +312,7 @@ export const FirestoreProvider = ({ children }) => {
         setSelectedTopicId(defaultTopicId);
         setQuestions([]);
         setSelectedQuestion(null);
-        await fetchQuestions(defaultTopicId);
+        await fetchTopicDetails(defaultTopicId);
       } else if (!defaultTopicId) {
         setError('Unable to select a default topic');
       }
@@ -325,7 +324,7 @@ export const FirestoreProvider = ({ children }) => {
   useEffect(() => {
     if (!selectedTopicId) return;
     setTopicProgress({});
-    fetchQuestions(selectedTopicId);
+    fetchTopicDetails(selectedTopicId);
   }, [selectedTopicId]);
 
   const value = {
@@ -343,8 +342,8 @@ export const FirestoreProvider = ({ children }) => {
     error,
     goal,
     updateUserData,
-    fetchTopics,
-    fetchQuestions,
+    fetchTopicNames,
+    fetchTopicDetails,
     updateUserQuestion,
     removeQuestionStatus,
   };
