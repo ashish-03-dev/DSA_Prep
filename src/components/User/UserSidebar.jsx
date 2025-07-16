@@ -6,12 +6,13 @@ function UserSidebar({ onClose }) {
     questions,
     selectedTopicId,
     setSelectedTopicId,
+    selectedQuestion,
+    nextQuestion,
     handleSelectQuestion,
     updateUserData,
     goal,
     loading,
     topicProgress,
-    updateUserQuestion,
     removeQuestionStatus,
   } = useFirestore();
 
@@ -19,10 +20,27 @@ function UserSidebar({ onClose }) {
   const handleTopicChange = (e) => {
     const newTopicId = e.target.value;
     setSelectedTopicId(newTopicId);
+    if (window.innerWidth < 768) {
+      onClose();
+    }
   };
 
   const handleQuestionClick = (q) => {
-    handleSelectQuestion(q);
+    const status = topicProgress?.[q.id]?.status;
+    const isSelectableStatus = ['Completed', 'Review Later'].includes(status);
+    const isSameAsSelected = selectedQuestion?.id === q.id;
+    const isNext = nextQuestion?.id === q.id;
+    const isSelectable = isSelectableStatus || isSameAsSelected || isNext;
+
+    if (isSelectable) {
+      if (!isSameAsSelected) {
+        handleSelectQuestion(q);
+      }
+
+      if (window.innerWidth < 768) {
+        onClose();
+      }
+    }
   };
 
   const queue = questions;

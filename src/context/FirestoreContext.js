@@ -16,6 +16,7 @@ export const FirestoreProvider = ({ children }) => {
   const [topicProgress, setTopicProgress] = useState({});
   const [selectedTopicId, setSelectedTopicId] = useState(null);
   const [selectedQuestion, setSelectedQuestion] = useState(null);
+  const [nextQuestion, setNextQuestion] = useState(null);
   const [error, setError] = useState(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
 
@@ -64,6 +65,7 @@ export const FirestoreProvider = ({ children }) => {
       setSelectingQuestionLoading(true);
       setQuestions([]);
       setSelectedQuestion(null);
+      setNextQuestion(null);
 
       const collectionName = goal === 'learn' ? 'learn' : 'practice';
       const topicDocRef = doc(db, collectionName, topicId);
@@ -124,12 +126,16 @@ export const FirestoreProvider = ({ children }) => {
   const handleSelectQuestion = (question) => {
     if (!question?.id) {
       setSelectedQuestion(null);
+      setNextQuestion(null);
       setSelectingQuestionLoading(false);
       return;
     }
 
     const progress = topicProgress?.[question.id] || {};
     setSelectedQuestion({ ...question, ...progress });
+    if (nextQuestion === null) {
+      setNextQuestion(question);
+    }
     setSelectingQuestionLoading(false);
   };
 
@@ -195,8 +201,6 @@ export const FirestoreProvider = ({ children }) => {
           });
 
           setSelectedTopicId(nextTopicId);
-          setQuestions([]);
-          setSelectedQuestion(null);
           await fetchTopicDetails(nextTopicId);
         }
         setIsTransitioning(false);
@@ -268,8 +272,6 @@ export const FirestoreProvider = ({ children }) => {
         : topicsData[0]?.id;
 
       setSelectedTopicId(validTopicId);
-      setQuestions([]);
-      setSelectedQuestion(null);
       await fetchTopicDetails(validTopicId);
     };
 
@@ -289,6 +291,7 @@ export const FirestoreProvider = ({ children }) => {
     setSelectedTopicId,
     topicProgress,
     selectedQuestion,
+    nextQuestion,
     setSelectedQuestion,
     handleSelectQuestion,
     handleUserQuestion,
