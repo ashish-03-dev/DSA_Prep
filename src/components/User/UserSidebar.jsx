@@ -65,9 +65,26 @@ function UserSidebar({ onClose }) {
       <div className="d-md-none d-flex justify-content-end mb-4">
         <button
           onClick={onClose}
-          className="btn bg-light border"
+          type="button"
+          class="btn btn-light border d-flex align-items-center gap-2"
         >
-          ← back
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 20 20"
+            fill="none"
+          >
+            <polyline
+              points="12 4 6 10 12 16"
+              fill="none"
+              stroke="black"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <span>Back</span>
         </button>
       </div>
 

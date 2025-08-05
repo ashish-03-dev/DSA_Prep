@@ -77,9 +77,8 @@ function UserQuestionSolver() {
   const isGeeksForGeeks = selectedQuestion.link?.includes('geeksforgeeks.org');
 
   return (
-    <div className="p-4">
+    <div>
       <h2 className="mb-4">{selectedQuestion.title}</h2>
-
       <div className="mb-3">
         {selectedQuestion.link && (
           <div className="mb-3">

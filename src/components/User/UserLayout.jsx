@@ -14,14 +14,13 @@ const UserLayout = () => {
   };
 
   return (
-    <div className="container-fluid">
-      {/* Mobile toggle button */}
+    <div className="container-fluid p-5">
       {showSidebar && (
         <button
-          className="btn bg-light border d-md-none m-4 mb-0"
+          className="btn bg-light border d-flex align-items-center gap-2 d-md-none mb-4"
           onClick={toggleSidebar}
         >
-          {isSidebarOpen ? '←' : '→'}
+          <span>Menu</span>
         </button>
       )}
 
@@ -29,20 +28,18 @@ const UserLayout = () => {
         {/* Sidebar */}
         {showSidebar && (
           <div
-            className={`col-md-3 bg-light vh-100 p-0 position-fixed top-0 start-0 transition-sidebar ${
-              isSidebarOpen ? 'translate-show' : 'translate-hide'
-            } d-md-block`}
+            className={`col-md-3 bg-light vh-100 p-0 position-fixed top-0 start-0 transition-sidebar ${isSidebarOpen ? 'translate-show' : 'translate-hide'
+              } d-md-block`}
             style={{ zIndex: 1040 }}
           >
-         <UserSidebar onClose={toggleSidebar} />
+            <UserSidebar onClose={toggleSidebar} />
           </div>
         )}
 
         {/* Main Content */}
         <div
-          className={`${
-            showSidebar ? 'offset-md-3 col-md-9' : 'col-md-12'
-          }`}
+          className={`${showSidebar ? 'offset-md-3 col-md-9' : 'col-md-12'
+            }`}
         >
           <Outlet context={{ selectedQuestion, setSelectedQuestion }} />
         </div>
