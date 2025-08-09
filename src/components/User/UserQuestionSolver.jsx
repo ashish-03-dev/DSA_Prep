@@ -14,7 +14,6 @@ function UserQuestionSolver() {
     }
   }, [selectedQuestion]);
 
-
   const handleStatusUpdate = async (status) => {
     if (!selectedQuestion) return;
 
@@ -26,11 +25,6 @@ function UserQuestionSolver() {
       };
 
       await updateUserQuestion(selectedQuestion.topicId, selectedQuestion.id, updatedData);
-
-      setSelectedQuestion(prev => ({
-        ...prev,
-        ...updatedData
-      }));
 
     } catch (error) {
       console.error(`Error marking question as ${status}:`, error);

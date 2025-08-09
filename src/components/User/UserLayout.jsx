@@ -26,21 +26,18 @@ const UserLayout = () => {
 
       <div className="row">
         {/* Sidebar */}
-        {showSidebar && (
-          <div
-            className={`col-md-3 bg-light vh-100 p-0 position-fixed top-0 start-0 transition-sidebar ${isSidebarOpen ? 'translate-show' : 'translate-hide'
-              } d-md-block`}
-            style={{ zIndex: 1040 }}
-          >
-            <UserSidebar onClose={toggleSidebar} />
-          </div>
-        )}
-
-        {/* Main Content */}
         <div
-          className={`${showSidebar ? 'offset-md-3 col-md-9' : 'col-md-12'
-            }`}
+          className={`col-md-3 bg-light vh-100 p-0 position-fixed top-0 start-0 transition-sidebar ${isSidebarOpen ? 'translate-show' : 'translate-hide'
+            } d-md-block`}
+          style={{
+            zIndex: 1040,
+            display: showSidebar ? 'block' : 'none', // Hide instead of unmount
+          }}
         >
+          <UserSidebar onClose={toggleSidebar} />
+        </div>
+        {/* Main Content */}
+        <div className={`${showSidebar ? 'offset-md-3 col-md-9' : 'col-md-12'}`}>
           <Outlet context={{ selectedQuestion, setSelectedQuestion }} />
         </div>
       </div>

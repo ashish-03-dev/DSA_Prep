@@ -25,7 +25,11 @@ function UserSidebar({ onClose }) {
     }
   };
 
-  const handleQuestionClick = (q) => {
+  const handleQuestionClick = (q, e) => {
+    if (e?.target?.type === 'checkbox') {
+      return;
+    }
+
     const status = topicProgress?.[q.id]?.status;
     const isSelectableStatus = ['Completed', 'Review Later'].includes(status);
     const isSameAsSelected = selectedQuestion?.id === q.id;
@@ -66,7 +70,7 @@ function UserSidebar({ onClose }) {
         <button
           onClick={onClose}
           type="button"
-          class="btn btn-light border d-flex align-items-center gap-2"
+          className="btn btn-light border d-flex align-items-center gap-2"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -79,9 +83,9 @@ function UserSidebar({ onClose }) {
               points="12 4 6 10 12 16"
               fill="none"
               stroke="black"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             />
           </svg>
           <span>Back</span>
@@ -148,7 +152,7 @@ function UserSidebar({ onClose }) {
               <li
                 key={question.id}
                 className="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
-                onClick={() => handleQuestionClick(question)}
+                onClick={(e) => handleQuestionClick(question, e)}
                 style={{
                   cursor: 'pointer',
                   transition: 'transform 0.2s ease, background-color 0.2s ease',
@@ -168,7 +172,11 @@ function UserSidebar({ onClose }) {
                   <input
                     type="checkbox"
                     checked={true}
-                    onChange={() => removeQuestionStatus(selectedTopicId, question.id)}
+                    onChange={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation(); // ✅ Prevent parent onClick from firing
+                      removeQuestionStatus(selectedTopicId, question.id);
+                    }}
                     title={isCompleted ? 'Completed' : 'Review Later'}
                     style={{
                       width: '20px',

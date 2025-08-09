@@ -25,7 +25,6 @@ export const FirestoreProvider = ({ children }) => {
     try {
       const userDocRef = doc(db, 'users', user.uid);
       await updateDoc(userDocRef, newData);
-      setUserData(prev => ({ ...prev, ...newData }));
     } catch (error) {
       console.error('Error updating user data:', error);
       setError(error.message);
@@ -167,17 +166,16 @@ export const FirestoreProvider = ({ children }) => {
       const updatedQuestions = questions.map(q =>
         q.id === questionId ? { ...q, ...updatedProgress } : q
       );
+
       setQuestions(updatedQuestions);
 
       const newProgress = {
         ...topicProgress,
         [questionId]: { ...(topicProgress[questionId] || {}), ...updatedProgress }
       };
-      setTopicProgress(newProgress);
 
-      if (selectedQuestion?.id === questionId) {
-        setSelectedQuestion(prev => ({ ...prev, ...updatedProgress }));
-      }
+      setTopicProgress(newProgress);
+      setSelectedQuestion(prev => ({ ...prev, ...updatedProgress }));
 
       handleUserQuestion(updatedQuestions, newProgress, topicId);
 
@@ -219,6 +217,7 @@ export const FirestoreProvider = ({ children }) => {
       const questionDocRef = doc(db, 'users', user.uid, 'progress', goal, topicId, questionId);
       await updateDoc(questionDocRef, { status: deleteField() });
 
+      // Update local state
       const updatedQuestions = questions.map(q =>
         q.id === questionId ? { ...q, status: undefined } : q
       );
@@ -235,6 +234,15 @@ export const FirestoreProvider = ({ children }) => {
       }
 
       handleUserQuestion(updatedQuestions, updatedProgress, topicId);
+
+      // ✅ Set lastTopic to the current topic in user doc
+      await updateUserData({
+        lastTopic: {
+          ...userData.lastTopic,
+          [goal]: topicId
+        }
+      });
+
     } catch (error) {
       console.error('Failed to remove question status:', error);
       setError(error.message);
@@ -248,7 +256,6 @@ export const FirestoreProvider = ({ children }) => {
       const status = userProgress[q.id]?.status;
       return !status || status === 'Unsolved';
     }) || sortedQuestions.find(q => q.topicId === topicIdOverride);
-
     handleSelectQuestion(nextQuestion);
   };
 
