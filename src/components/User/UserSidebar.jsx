@@ -11,6 +11,7 @@ function UserSidebar({ onClose }) {
     handleSelectQuestion,
     updateUserData,
     goal,
+    setGoal,
     loading,
     topicProgress,
     removeQuestionStatus,
@@ -53,6 +54,7 @@ function UserSidebar({ onClose }) {
   const toggleMode = () => {
     const newMode = goal === 'learn' ? 'practice' : 'learn';
     updateUserData({ goal: newMode });
+    setGoal(newMode);
   };
 
   // Show loading placeholder while Firestore is loading

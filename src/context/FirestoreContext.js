@@ -132,7 +132,7 @@ export const FirestoreProvider = ({ children }) => {
 
     const progress = topicProgress?.[question.id] || {};
     setSelectedQuestion({ ...question, ...progress });
-    if (nextQuestion === null) {
+    if (nextQuestion === null || (question.status !== 'Completed' && question.status !== 'Review Later')) {
       setNextQuestion(question);
     }
     setSelectingQuestionLoading(false);
@@ -306,6 +306,7 @@ export const FirestoreProvider = ({ children }) => {
     selectingQuestionLoading,
     error,
     goal,
+    setGoal,
     updateUserData,
     fetchTopicNames,
     fetchTopicDetails,
