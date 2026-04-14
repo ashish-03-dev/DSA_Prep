@@ -14,9 +14,10 @@ function UserSidebar({ onClose }) {
     setGoal,
     loading,
     topicProgress,
+    allTopicsProgress,
+    topicQuestionCounts,
     removeQuestionStatus,
   } = useFirestore();
-
 
   const handleTopicChange = (e) => {
     const newTopicId = e.target.value;
@@ -41,7 +42,6 @@ function UserSidebar({ onClose }) {
       if (!isSameAsSelected) {
         handleSelectQuestion(q);
       }
-
       if (window.innerWidth < 768) {
         onClose();
       }
@@ -57,7 +57,24 @@ function UserSidebar({ onClose }) {
     setGoal(newMode);
   };
 
-  // Show loading placeholder while Firestore is loading
+  // ✅ Returns true only if we've loaded the topic AND every question is done
+  const isTopicDone = (topicId) => {
+    const progress = allTopicsProgress[topicId];
+    const totalCount = topicQuestionCounts[topicId];
+
+    // Haven't visited this topic yet — can't confirm it's done
+    if (!progress || !totalCount) return false;
+
+    const progressEntries = Object.values(progress);
+
+    // Number of answered questions must match total questions in topic
+    const answeredCount = progressEntries.filter(
+      p => p.status === 'Completed' || p.status === 'Review Later'
+    ).length;
+
+    return answeredCount === totalCount;
+  };
+
   if (loading) {
     return (
       <div className="d-flex flex-column bg-light vh-100 p-3" style={{ position: 'sticky', top: 0 }}>
@@ -95,7 +112,7 @@ function UserSidebar({ onClose }) {
       </div>
 
       <div className="d-flex justify-content-between align-items-center mb-5">
-        <h4 className='mb-0'>{mode}</h4>
+        <h4 className="mb-0">{mode}</h4>
         <button
           onClick={toggleMode}
           className="btn rounded-circle p-0 d-flex align-items-center justify-content-center"
@@ -122,7 +139,7 @@ function UserSidebar({ onClose }) {
           <option value="">Select</option>
           {topics.map(topic => (
             <option key={topic.id} value={topic.id}>
-              {topic.name || topic.id}
+              {isTopicDone(topic.id) ? '✓ ' : ''}{topic.name || topic.id}
             </option>
           ))}
         </select>
@@ -136,7 +153,6 @@ function UserSidebar({ onClose }) {
           msOverflowStyle: 'none',
         }}
       >
-
         <ul className="list-group" style={{ position: 'relative', padding: '1rem 0' }}>
           {queue.map((question, index) => {
             const isMiddle = index === Math.floor(queue.length / 2);
@@ -147,8 +163,8 @@ function UserSidebar({ onClose }) {
             const isMuted = isCompleted || isReviewLater;
 
             let backgroundColor = '';
-            if (isCompleted) backgroundColor = '#f4fdf7'; // Softer pastel green
-            else if (isReviewLater) backgroundColor = '#fffdf5'; // Softer pastel yellow
+            if (isCompleted) backgroundColor = '#f4fdf7';
+            else if (isReviewLater) backgroundColor = '#fffdf5';
 
             return (
               <li
@@ -169,14 +185,13 @@ function UserSidebar({ onClose }) {
                   {question.title}
                 </span>
 
-                {/* Show only if status is set */}
                 {(isCompleted || isReviewLater) && (
                   <input
                     type="checkbox"
                     checked={true}
                     onChange={(e) => {
                       e.preventDefault();
-                      e.stopPropagation(); // ✅ Prevent parent onClick from firing
+                      e.stopPropagation();
                       removeQuestionStatus(selectedTopicId, question.id);
                     }}
                     title={isCompleted ? 'Completed' : 'Review Later'}

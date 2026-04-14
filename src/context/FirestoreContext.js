@@ -14,6 +14,8 @@ export const FirestoreProvider = ({ children }) => {
   const [topics, setTopics] = useState([]);
   const [questions, setQuestions] = useState([]);
   const [topicProgress, setTopicProgress] = useState({});
+  const [topicQuestionCounts, setTopicQuestionCounts] = useState({});
+  const [allTopicsProgress, setAllTopicsProgress] = useState({});
   const [selectedTopicId, setSelectedTopicId] = useState(null);
   const [selectedQuestion, setSelectedQuestion] = useState(null);
   const [nextQuestion, setNextQuestion] = useState(null);
@@ -83,6 +85,7 @@ export const FirestoreProvider = ({ children }) => {
       })).sort((a, b) => a.order - b.order);
 
       setQuestions(questionsData);
+      setTopicQuestionCounts(prev => ({ ...prev, [topicId]: questionsData.length }));
       if (questionsData.length === 0) {
         setSelectingQuestionLoading(false);
         return;
@@ -96,13 +99,45 @@ export const FirestoreProvider = ({ children }) => {
     }
   };
 
+  const fetchAllTopicsProgress = async (topicsList) => {
+    if (!user?.uid || !goal) return;
+
+    const allProgress = {};
+    const allCounts = {};
+
+    await Promise.all(
+      topicsList.map(async (topic) => {
+        const topicId = topic.id;
+
+        const progressRef = collection(db, 'users', user.uid, 'progress', goal, topicId);
+        const snap = await getDocs(progressRef);
+
+        const progressData = Object.fromEntries(
+          snap.docs
+            .filter(doc => doc.id !== 'placeholder')
+            .map(doc => [doc.id, doc.data()])
+        );
+
+        allProgress[topicId] = progressData;
+
+        // get question count
+        const topicDocRef = doc(db, goal === 'learn' ? 'learn' : 'practice', topicId);
+        const topicSnap = await getDoc(topicDocRef);
+
+        const questions = topicSnap.data()?.questions || [];
+        allCounts[topicId] = questions.length;
+      })
+    );
+
+    setAllTopicsProgress(allProgress);
+    setTopicQuestionCounts(allCounts);
+  };
+
   const fetchUserProgressByTopic = async (topicId) => {
     if (!user?.uid || !goal || !topicId) {
-      console.warn('Invalid input:', { user: !!user?.uid, goal, topicId });
       setTopicProgress({});
       return {};
     }
-
     try {
       const questionsCollectionRef = collection(db, 'users', user.uid, 'progress', goal, topicId);
       const progressSnap = await getDocs(questionsCollectionRef);
@@ -114,6 +149,10 @@ export const FirestoreProvider = ({ children }) => {
       );
 
       setTopicProgress(progressData);
+
+      // ✅ NEW: accumulate across topics
+      setAllTopicsProgress(prev => ({ ...prev, [topicId]: progressData }));
+
       return progressData;
     } catch (error) {
       console.error(`Error fetching progress for topic ${topicId}:`, error);
@@ -175,6 +214,7 @@ export const FirestoreProvider = ({ children }) => {
       };
 
       setTopicProgress(newProgress);
+      setAllTopicsProgress(prev => ({ ...prev, [topicId]: newProgress }));
       setSelectedQuestion(prev => ({ ...prev, ...updatedProgress }));
 
       handleUserQuestion(updatedQuestions, newProgress, topicId);
@@ -228,6 +268,7 @@ export const FirestoreProvider = ({ children }) => {
         delete updatedProgress[questionId].status;
       }
       setTopicProgress(updatedProgress);
+      setAllTopicsProgress(prev => ({ ...prev, [topicId]: updatedProgress }));
 
       if (selectedQuestion?.id === questionId) {
         setSelectedQuestion(prev => ({ ...prev, status: undefined }));
@@ -272,6 +313,7 @@ export const FirestoreProvider = ({ children }) => {
       }
 
       const topicsData = await fetchTopicNames();
+      await fetchAllTopicsProgress(topicsData); // 🔥 ADD THIS
 
       const lastTopicForGoal = userData.lastTopic?.[goal];
       const validTopicId = topicsData.some(t => t.id === lastTopicForGoal)
@@ -297,6 +339,8 @@ export const FirestoreProvider = ({ children }) => {
     selectedTopicId,
     setSelectedTopicId,
     topicProgress,
+    topicQuestionCounts,
+    allTopicsProgress,
     selectedQuestion,
     nextQuestion,
     setSelectedQuestion,
