@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react';
 import { collection, getDocs, setDoc, updateDoc, deleteDoc, doc, deleteField, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useFirebase } from './FirebaseContext';
@@ -8,9 +8,10 @@ export const useFirestore = () => useContext(FirestoreContext);
 
 export const FirestoreProvider = ({ children }) => {
   const { user, userData } = useFirebase();
+
   const [loading, setLoading] = useState(true);
   const [selectingQuestionLoading, setSelectingQuestionLoading] = useState(true);
-  const [goal, setGoal] = useState(null);
+  const [goal, setGoal] = useState(userData?.goal || null);
   const [topics, setTopics] = useState([]);
   const [questions, setQuestions] = useState([]);
   const [topicProgress, setTopicProgress] = useState({});
@@ -20,123 +21,58 @@ export const FirestoreProvider = ({ children }) => {
   const [selectedQuestion, setSelectedQuestion] = useState(null);
   const [nextQuestion, setNextQuestion] = useState(null);
   const [error, setError] = useState(null);
-  const [isTransitioning, setIsTransitioning] = useState(false);
 
-  const updateUserData = async (newData) => {
-    if (!user) return;
-    try {
-      const userDocRef = doc(db, 'users', user.uid);
-      await updateDoc(userDocRef, newData);
-    } catch (error) {
-      console.error('Error updating user data:', error);
-      setError(error.message);
-    }
+  // Stable refs to avoid stale closures without adding to dep arrays
+  const isTransitioningRef = useRef(false);
+
+  // ─── Helpers ────────────────────────────────────────────────────────────────
+
+  const pickNextQuestion = (questionList, userProgress, topicId) => {
+    const sorted = [...questionList].sort((a, b) => a.order - b.order);
+    return (
+      sorted.find(q => {
+        if (q.topicId !== topicId) return false;
+        const status = userProgress[q.id]?.status;
+        return !status || status === 'Unsolved';
+      }) || sorted.find(q => q.topicId === topicId)
+    );
   };
 
-  const handleSelectQuestion = useCallback((question) => {
+  const applySelectedQuestion = (question, userProgress) => {
     if (!question?.id) {
       setSelectedQuestion(null);
       setNextQuestion(null);
       setSelectingQuestionLoading(false);
       return;
     }
-
-    const progress = topicProgress?.[question.id] || {};
-    setSelectedQuestion({ ...question, ...progress });
-    setNextQuestion(prev => {
-      if (
-        prev === null ||
-        (question.status !== 'Completed' && question.status !== 'Review Later')
-      ) {
-        return question;
-      }
-      return prev;
-    });
-
+    const merged = { ...question, ...(userProgress?.[question.id] || {}) };
+    setSelectedQuestion(merged);
+    setNextQuestion(prev =>
+      prev === null || !['Completed', 'Review Later'].includes(question.status)
+        ? question
+        : prev
+    );
     setSelectingQuestionLoading(false);
-  }, [topicProgress]);
+  };
 
-  const handleUserQuestion = useCallback((
-    questionList = questions,
-    userProgress = topicProgress,
-    topicIdOverride = selectedTopicId
-  ) => {
-    const sortedQuestions = [...questionList].sort((a, b) => a.order - b.order);
+  // ─── Firestore reads ─────────────────────────────────────────────────────────
 
-    const nextQuestion =
-      sortedQuestions.find(q => {
-        if (q.topicId !== topicIdOverride) return false;
-        const status = userProgress[q.id]?.status;
-        return !status || status === 'Unsolved';
-      }) ||
-      sortedQuestions.find(q => q.topicId === topicIdOverride);
-
-    handleSelectQuestion(nextQuestion);
-  }, [questions, topicProgress, selectedTopicId, handleSelectQuestion]);
-
-  useEffect(() => {
-    if (userData?.goal) {
-      setGoal(userData.goal);
-    }
-  }, [userData]);
-
-  const fetchTopicNames = useCallback(async () => {
+  const fetchProgress = async (topicId) => {
+    if (!user?.uid || !goal || !topicId) return {};
     try {
-      if (!goal) return [];
-
-      const goalDocRef = doc(db, 'topics', goal);
-      const goalSnap = await getDoc(goalDocRef);
-
-      if (!goalSnap.exists()) {
-        throw new Error(`Goal '${goal}' document not found`);
-      }
-
-      const topicsArray = goalSnap.data().topics || [];
-
-      // Optional: sort by order if not already sorted
-      topicsArray.sort((a, b) => a.order - b.order);
-
-      setTopics(topicsArray);
-      return topicsArray;
-    } catch (error) {
-      console.error('Error fetching topic names:', error);
-      setError(error.message);
-      setTopics([]);
-      return [];
-    } finally {
-      setLoading(false);
-    }
-  }, [goal]);
-
-  const fetchUserProgressByTopic = useCallback(async (topicId) => {
-    if (!user?.uid || !goal || !topicId) {
-      setTopicProgress({});
-      return {};
-    }
-    try {
-      const questionsCollectionRef = collection(db, 'users', user.uid, 'progress', goal, topicId);
-      const progressSnap = await getDocs(questionsCollectionRef);
-
-      const progressData = Object.fromEntries(
-        progressSnap.docs
-          .filter(doc => doc.id !== 'placeholder')
-          .map(doc => [doc.id, doc.data()])
+      const ref = collection(db, 'users', user.uid, 'progress', goal, topicId);
+      const snap = await getDocs(ref);
+      return Object.fromEntries(
+        snap.docs.filter(d => d.id !== 'placeholder').map(d => [d.id, d.data()])
       );
-
-      setTopicProgress(progressData);
-
-      // ✅ NEW: accumulate across topics
-      setAllTopicsProgress(prev => ({ ...prev, [topicId]: progressData }));
-
-      return progressData;
-    } catch (error) {
-      console.error(`Error fetching progress for topic ${topicId}:`, error);
-      setTopicProgress({});
+    } catch (err) {
+      console.error('fetchProgress:', err);
       return {};
     }
-  }, [user, goal]);
+  };
 
   const fetchTopicDetails = useCallback(async (topicId) => {
+    if (!topicId || !goal) return;
     try {
       setSelectingQuestionLoading(true);
       setQuestions([]);
@@ -144,249 +80,189 @@ export const FirestoreProvider = ({ children }) => {
       setNextQuestion(null);
 
       const collectionName = goal === 'learn' ? 'learn' : 'practice';
-      const topicDocRef = doc(db, collectionName, topicId);
-      const topicSnap = await getDoc(topicDocRef);
+      const snap = await getDoc(doc(db, collectionName, topicId));
+      if (!snap.exists()) throw new Error(`Topic ${topicId} not found`);
 
-      if (!topicSnap.exists()) {
-        throw new Error(`Topic ${topicId} not found`);
-      }
+      const progress = await fetchProgress(topicId);
+      setTopicProgress(progress);
+      setAllTopicsProgress(prev => ({ ...prev, [topicId]: progress }));
 
-      const progress = await fetchUserProgressByTopic(topicId);
-
-      const questionsData = (topicSnap.data().questions || [])
-        .map(question => ({
-          id: question.id,
-          topicId,
-          ...question,
-          ...(progress?.[question.id] || {})
-        }))
+      const questionsData = (snap.data().questions || [])
+        .map(q => ({ ...q, topicId, ...(progress[q.id] || {}) }))
         .sort((a, b) => a.order - b.order);
 
       setQuestions(questionsData);
-      setTopicQuestionCounts(prev => ({
-        ...prev,
-        [topicId]: questionsData.length
-      }));
+      setTopicQuestionCounts(prev => ({ ...prev, [topicId]: questionsData.length }));
 
       if (questionsData.length === 0) {
         setSelectingQuestionLoading(false);
         return;
       }
 
-      handleUserQuestion(questionsData, progress, topicId);
-    } catch (error) {
-      console.error('Error fetching topic details:', error);
-      setError(error.message);
-      setQuestions([]);
+      const next = pickNextQuestion(questionsData, progress, topicId);
+      applySelectedQuestion(next, progress);
+    } catch (err) {
+      console.error('fetchTopicDetails:', err);
+      setError(err.message);
       setSelectingQuestionLoading(false);
     }
-  }, [goal, fetchUserProgressByTopic, handleUserQuestion]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [goal, user?.uid]);
 
-  const fetchAllTopicsProgress = useCallback(async (topicsList) => {
-    if (!user?.uid || !goal) return;
+  // ─── Bootstrap: runs only when goal or user changes ──────────────────────────
 
-    const allProgress = {};
-    const allCounts = {};
+  // Using a ref so the effect dep array stays [goal, user?.uid]
+  const userDataRef = useRef(userData);
+  userDataRef.current = userData;
 
-    await Promise.all(
-      topicsList.map(async (topic) => {
-        const topicId = topic.id;
+  // Sync goal from userData
+  useEffect(() => {
+    if (userData?.goal) setGoal(userData.goal);
+  }, [userData?.goal]);
 
-        const progressRef = collection(db, 'users', user.uid, 'progress', goal, topicId);
-        const snap = await getDocs(progressRef);
+  // Main load effect
+  useEffect(() => {
+    const load = async () => {
+      if (!goal || !user?.uid) return;
+      setLoading(true);
+      try {
+        const goalSnap = await getDoc(doc(db, 'topics', goal));
+        if (!goalSnap.exists()) throw new Error(`Goal '${goal}' not found`);
+        const topicsData = (goalSnap.data().topics || []).sort((a, b) => a.order - b.order);
+        setTopics(topicsData);
 
-        const progressData = Object.fromEntries(
-          snap.docs
-            .filter(doc => doc.id !== 'placeholder')
-            .map(doc => [doc.id, doc.data()])
-        );
+        const [progressResults, countResults] = await Promise.all([
+          Promise.all(topicsData.map(async t => {
+            const p = await fetchProgress(t.id);
+            return [t.id, p];
+          })),
+          Promise.all(topicsData.map(async t => {
+            const s = await getDoc(doc(db, goal === 'learn' ? 'learn' : 'practice', t.id));
+            return [t.id, (s.data()?.questions || []).length];
+          }))
+        ]);
 
-        allProgress[topicId] = progressData;
+        setAllTopicsProgress(Object.fromEntries(progressResults));
+        setTopicQuestionCounts(Object.fromEntries(countResults));
 
-        // get question count
-        const topicDocRef = doc(db, goal === 'learn' ? 'learn' : 'practice', topicId);
-        const topicSnap = await getDoc(topicDocRef);
+        const lastTopic = userDataRef.current?.lastTopic?.[goal];
+        const topicId = topicsData.some(t => t.id === lastTopic) ? lastTopic : topicsData[0]?.id;
+        setSelectedTopicId(topicId);
+        await fetchTopicDetails(topicId);
+      } catch (err) {
+        console.error('load:', err);
+        setError(err.message);
+      } finally {
+        setLoading(false); // ✅ always runs now
+      }
+    };
 
-        const questions = topicSnap.data()?.questions || [];
-        allCounts[topicId] = questions.length;
-      })
-    );
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [goal, user?.uid]); // ✅ stable primitives only
 
-    setAllTopicsProgress(allProgress);
-    setTopicQuestionCounts(allCounts);
-  }, [user, goal]);
+  // ─── Writes ──────────────────────────────────────────────────────────────────
 
-
-
-
-
-  const cleanupPlaceholder = async (topicId) => {
-    if (!user?.uid || !goal || !topicId) return;
+  const updateUserData = async (newData) => {
+    if (!user?.uid) return;
     try {
-      const placeholderDocRef = doc(db, 'users', user.uid, 'progress', goal, topicId, 'placeholder');
-      await deleteDoc(placeholderDocRef);
-    } catch (error) {
-      console.warn('Error cleaning up placeholder:', error);
+      await updateDoc(doc(db, 'users', user.uid), newData);
+    } catch (err) {
+      console.error('updateUserData:', err);
+      setError(err.message);
     }
   };
 
   const updateUserQuestion = async (topicId, questionId, { status, codes, notes }) => {
-    if (!user?.uid || !goal || !topicId || !questionId || !status) {
-      console.warn('Invalid input:', { user: !!user?.uid, goal, topicId, questionId, status });
-      setError('Missing required fields');
-      return;
-    }
-
+    if (!user?.uid || !goal || !topicId || !questionId || !status) return;
     try {
-      await cleanupPlaceholder(topicId);
+      const ref = doc(db, 'users', user.uid, 'progress', goal, topicId, questionId);
 
-      const questionDocRef = doc(db, 'users', user.uid, 'progress', goal, topicId, questionId);
+      // Remove placeholder if it exists
+      await deleteDoc(doc(db, 'users', user.uid, 'progress', goal, topicId, 'placeholder'))
+        .catch(() => { });
+
       const updatedProgress = { status, codes, notes };
-
-      await setDoc(questionDocRef, updatedProgress, { merge: true });
-
-      const updatedQuestions = questions.map(q =>
-        q.id === questionId ? { ...q, ...updatedProgress } : q
-      );
-
-      setQuestions(updatedQuestions);
+      await setDoc(ref, updatedProgress, { merge: true });
 
       const newProgress = {
         ...topicProgress,
         [questionId]: { ...(topicProgress[questionId] || {}), ...updatedProgress }
       };
+      const updatedQuestions = questions.map(q =>
+        q.id === questionId ? { ...q, ...updatedProgress } : q
+      );
 
       setTopicProgress(newProgress);
       setAllTopicsProgress(prev => ({ ...prev, [topicId]: newProgress }));
+      setQuestions(updatedQuestions);
       setSelectedQuestion(prev => ({ ...prev, ...updatedProgress }));
 
-      handleUserQuestion(updatedQuestions, newProgress, topicId);
+      const next = pickNextQuestion(updatedQuestions, newProgress, topicId);
+      applySelectedQuestion(next, newProgress);
 
-      const allFinished = updatedQuestions.every(q =>
-        newProgress[q.id]?.status === 'Completed' || newProgress[q.id]?.status === 'Review Later'
+      // Auto-advance to next topic when all done
+      const allDone = updatedQuestions.every(q =>
+        ['Completed', 'Review Later'].includes(newProgress[q.id]?.status)
       );
 
-      if (allFinished && !isTransitioning) {
-        setIsTransitioning(true);
-        const sortedTopics = [...topics].sort((a, b) => a.order - b.order);
-        const currentIndex = sortedTopics.findIndex(t => t.id === topicId);
-        const nextTopic = sortedTopics[currentIndex + 1];
-
+      if (allDone && !isTransitioningRef.current) {
+        isTransitioningRef.current = true;
+        const sorted = [...topics].sort((a, b) => a.order - b.order);
+        const nextTopic = sorted[sorted.findIndex(t => t.id === topicId) + 1];
         if (nextTopic) {
-          const nextTopicId = nextTopic.id;
-          await updateUserData({
-            lastTopic: {
-              ...userData.lastTopic,
-              [goal]: nextTopicId
-            }
-          });
-
-          setSelectedTopicId(nextTopicId);
-          await fetchTopicDetails(nextTopicId);
+          await updateUserData({ lastTopic: { ...userDataRef.current?.lastTopic, [goal]: nextTopic.id } });
+          setSelectedTopicId(nextTopic.id);
+          await fetchTopicDetails(nextTopic.id);
         }
-        setIsTransitioning(false);
+        isTransitioningRef.current = false;
       }
-    } catch (error) {
-      console.error(`Error updating question ${questionId} in topic ${topicId}:`, error);
-      setError(error.message);
-      setIsTransitioning(false);
+    } catch (err) {
+      console.error('updateUserQuestion:', err);
+      setError(err.message);
+      isTransitioningRef.current = false;
     }
   };
 
   const removeQuestionStatus = async (topicId, questionId) => {
     if (!user?.uid || !goal || !topicId || !questionId) return;
-
     try {
-      const questionDocRef = doc(db, 'users', user.uid, 'progress', goal, topicId, questionId);
-      await updateDoc(questionDocRef, { status: deleteField() });
+      await updateDoc(
+        doc(db, 'users', user.uid, 'progress', goal, topicId, questionId),
+        { status: deleteField() }
+      );
 
-      // Update local state
       const updatedQuestions = questions.map(q =>
         q.id === questionId ? { ...q, status: undefined } : q
       );
-      setQuestions(updatedQuestions);
-
       const updatedProgress = { ...topicProgress };
-      if (updatedProgress[questionId]) {
-        delete updatedProgress[questionId].status;
-      }
+      if (updatedProgress[questionId]) delete updatedProgress[questionId].status;
+
+      setQuestions(updatedQuestions);
       setTopicProgress(updatedProgress);
       setAllTopicsProgress(prev => ({ ...prev, [topicId]: updatedProgress }));
+      if (selectedQuestion?.id === questionId) setSelectedQuestion(prev => ({ ...prev, status: undefined }));
 
-      if (selectedQuestion?.id === questionId) {
-        setSelectedQuestion(prev => ({ ...prev, status: undefined }));
-      }
+      const next = pickNextQuestion(updatedQuestions, updatedProgress, topicId);
+      applySelectedQuestion(next, updatedProgress);
 
-      handleUserQuestion(updatedQuestions, updatedProgress, topicId);
-
-      // ✅ Set lastTopic to the current topic in user doc
-      await updateUserData({
-        lastTopic: {
-          ...userData.lastTopic,
-          [goal]: topicId
-        }
-      });
-
-    } catch (error) {
-      console.error('Failed to remove question status:', error);
-      setError(error.message);
+      await updateUserData({ lastTopic: { ...userDataRef.current?.lastTopic, [goal]: topicId } });
+    } catch (err) {
+      console.error('removeQuestionStatus:', err);
+      setError(err.message);
     }
   };
 
-
-
-  useEffect(() => {
-    const loadTopics = async () => {
-      if (!userData || !goal || !user?.uid) {
-        return;
-      }
-
-      const topicsData = await fetchTopicNames();
-      await fetchAllTopicsProgress(topicsData);
-
-      const lastTopicForGoal = userData.lastTopic?.[goal];
-      const validTopicId = topicsData.some(t => t.id === lastTopicForGoal)
-        ? lastTopicForGoal
-        : topicsData[0]?.id;
-
-      setSelectedTopicId(prev => {
-        if (prev === validTopicId) return prev; // 🛑 prevent re-render loop
-        return validTopicId;
-      });
-    };
-
-    loadTopics();
-  }, [goal, userData, user, fetchTopicNames, fetchAllTopicsProgress]);
-
-  useEffect(() => {
-    if (!selectedTopicId) return;
-    setTopicProgress({});
-    fetchTopicDetails(selectedTopicId);
-  }, [selectedTopicId, fetchTopicDetails]);
+  // ─── Context value ────────────────────────────────────────────────────────────
 
   const value = {
-    topics,
-    questions,
-    selectedTopicId,
-    setSelectedTopicId,
-    topicProgress,
-    topicQuestionCounts,
-    allTopicsProgress,
-    selectedQuestion,
-    nextQuestion,
-    setSelectedQuestion,
-    handleSelectQuestion,
-    handleUserQuestion,
-    loading,
-    selectingQuestionLoading,
-    error,
-    goal,
-    setGoal,
-    updateUserData,
-    fetchTopicNames,
-    fetchTopicDetails,
-    updateUserQuestion,
-    removeQuestionStatus,
+    topics, questions, selectedTopicId, setSelectedTopicId,
+    topicProgress, topicQuestionCounts, allTopicsProgress,
+    selectedQuestion, nextQuestion, setSelectedQuestion,
+    loading, selectingQuestionLoading, error,
+    goal, setGoal,
+    updateUserData, fetchTopicDetails,
+    updateUserQuestion, removeQuestionStatus,
   };
 
   return (
