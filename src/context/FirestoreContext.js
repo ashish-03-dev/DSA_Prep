@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { collection, getDocs, setDoc, updateDoc, deleteDoc, doc, deleteField, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useFirebase } from './FirebaseContext';
@@ -33,7 +33,54 @@ export const FirestoreProvider = ({ children }) => {
     }
   };
 
-  const fetchTopicNames = async () => {
+  const handleSelectQuestion = useCallback((question) => {
+    if (!question?.id) {
+      setSelectedQuestion(null);
+      setNextQuestion(null);
+      setSelectingQuestionLoading(false);
+      return;
+    }
+
+    const progress = topicProgress?.[question.id] || {};
+    setSelectedQuestion({ ...question, ...progress });
+    setNextQuestion(prev => {
+      if (
+        prev === null ||
+        (question.status !== 'Completed' && question.status !== 'Review Later')
+      ) {
+        return question;
+      }
+      return prev;
+    });
+
+    setSelectingQuestionLoading(false);
+  }, [topicProgress]);
+
+  const handleUserQuestion = useCallback((
+    questionList = questions,
+    userProgress = topicProgress,
+    topicIdOverride = selectedTopicId
+  ) => {
+    const sortedQuestions = [...questionList].sort((a, b) => a.order - b.order);
+
+    const nextQuestion =
+      sortedQuestions.find(q => {
+        if (q.topicId !== topicIdOverride) return false;
+        const status = userProgress[q.id]?.status;
+        return !status || status === 'Unsolved';
+      }) ||
+      sortedQuestions.find(q => q.topicId === topicIdOverride);
+
+    handleSelectQuestion(nextQuestion);
+  }, [questions, topicProgress, selectedTopicId, handleSelectQuestion]);
+
+  useEffect(() => {
+    if (userData?.goal) {
+      setGoal(userData.goal);
+    }
+  }, [userData]);
+
+  const fetchTopicNames = useCallback(async () => {
     try {
       if (!goal) return [];
 
@@ -59,9 +106,37 @@ export const FirestoreProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [goal]);
 
-  const fetchTopicDetails = async (topicId) => {
+  const fetchUserProgressByTopic = useCallback(async (topicId) => {
+    if (!user?.uid || !goal || !topicId) {
+      setTopicProgress({});
+      return {};
+    }
+    try {
+      const questionsCollectionRef = collection(db, 'users', user.uid, 'progress', goal, topicId);
+      const progressSnap = await getDocs(questionsCollectionRef);
+
+      const progressData = Object.fromEntries(
+        progressSnap.docs
+          .filter(doc => doc.id !== 'placeholder')
+          .map(doc => [doc.id, doc.data()])
+      );
+
+      setTopicProgress(progressData);
+
+      // ✅ NEW: accumulate across topics
+      setAllTopicsProgress(prev => ({ ...prev, [topicId]: progressData }));
+
+      return progressData;
+    } catch (error) {
+      console.error(`Error fetching progress for topic ${topicId}:`, error);
+      setTopicProgress({});
+      return {};
+    }
+  }, [user, goal]);
+
+  const fetchTopicDetails = useCallback(async (topicId) => {
     try {
       setSelectingQuestionLoading(true);
       setQuestions([]);
@@ -77,19 +152,27 @@ export const FirestoreProvider = ({ children }) => {
       }
 
       const progress = await fetchUserProgressByTopic(topicId);
-      const questionsData = (topicSnap.data().questions || []).map(question => ({
-        id: question.id,
-        topicId,
-        ...question,
-        ...(progress?.[question.id] || {})
-      })).sort((a, b) => a.order - b.order);
+
+      const questionsData = (topicSnap.data().questions || [])
+        .map(question => ({
+          id: question.id,
+          topicId,
+          ...question,
+          ...(progress?.[question.id] || {})
+        }))
+        .sort((a, b) => a.order - b.order);
 
       setQuestions(questionsData);
-      setTopicQuestionCounts(prev => ({ ...prev, [topicId]: questionsData.length }));
+      setTopicQuestionCounts(prev => ({
+        ...prev,
+        [topicId]: questionsData.length
+      }));
+
       if (questionsData.length === 0) {
         setSelectingQuestionLoading(false);
         return;
       }
+
       handleUserQuestion(questionsData, progress, topicId);
     } catch (error) {
       console.error('Error fetching topic details:', error);
@@ -97,9 +180,9 @@ export const FirestoreProvider = ({ children }) => {
       setQuestions([]);
       setSelectingQuestionLoading(false);
     }
-  };
+  }, [goal, fetchUserProgressByTopic, handleUserQuestion]);
 
-  const fetchAllTopicsProgress = async (topicsList) => {
+  const fetchAllTopicsProgress = useCallback(async (topicsList) => {
     if (!user?.uid || !goal) return;
 
     const allProgress = {};
@@ -131,51 +214,11 @@ export const FirestoreProvider = ({ children }) => {
 
     setAllTopicsProgress(allProgress);
     setTopicQuestionCounts(allCounts);
-  };
+  }, [user, goal]);
 
-  const fetchUserProgressByTopic = async (topicId) => {
-    if (!user?.uid || !goal || !topicId) {
-      setTopicProgress({});
-      return {};
-    }
-    try {
-      const questionsCollectionRef = collection(db, 'users', user.uid, 'progress', goal, topicId);
-      const progressSnap = await getDocs(questionsCollectionRef);
 
-      const progressData = Object.fromEntries(
-        progressSnap.docs
-          .filter(doc => doc.id !== 'placeholder')
-          .map(doc => [doc.id, doc.data()])
-      );
 
-      setTopicProgress(progressData);
 
-      // ✅ NEW: accumulate across topics
-      setAllTopicsProgress(prev => ({ ...prev, [topicId]: progressData }));
-
-      return progressData;
-    } catch (error) {
-      console.error(`Error fetching progress for topic ${topicId}:`, error);
-      setTopicProgress({});
-      return {};
-    }
-  };
-
-  const handleSelectQuestion = (question) => {
-    if (!question?.id) {
-      setSelectedQuestion(null);
-      setNextQuestion(null);
-      setSelectingQuestionLoading(false);
-      return;
-    }
-
-    const progress = topicProgress?.[question.id] || {};
-    setSelectedQuestion({ ...question, ...progress });
-    if (nextQuestion === null || (question.status !== 'Completed' && question.status !== 'Review Later')) {
-      setNextQuestion(question);
-    }
-    setSelectingQuestionLoading(false);
-  };
 
   const cleanupPlaceholder = async (topicId) => {
     if (!user?.uid || !goal || !topicId) return;
@@ -290,23 +333,8 @@ export const FirestoreProvider = ({ children }) => {
     }
   };
 
-  const handleUserQuestion = (questionList = questions, userProgress = topicProgress, topicIdOverride = selectedTopicId) => {
-    const sortedQuestions = [...questionList].sort((a, b) => a.order - b.order);
-    const nextQuestion = sortedQuestions.find(q => {
-      if (q.topicId !== topicIdOverride) return false;
-      const status = userProgress[q.id]?.status;
-      return !status || status === 'Unsolved';
-    }) || sortedQuestions.find(q => q.topicId === topicIdOverride);
-    handleSelectQuestion(nextQuestion);
-  };
 
-  useEffect(() => {
-    if (userData?.goal) {
-      setGoal(userData.goal);
-    }
-  }, [userData]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const loadTopics = async () => {
       if (!userData || !goal || !user?.uid) {
@@ -328,14 +356,13 @@ export const FirestoreProvider = ({ children }) => {
     };
 
     loadTopics();
-  }, [goal, userData, user?.uid]);
+  }, [goal, userData, user, fetchTopicNames, fetchAllTopicsProgress]);
 
- // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!selectedTopicId) return;
     setTopicProgress({});
     fetchTopicDetails(selectedTopicId);
-  }, [selectedTopicId]);
+  }, [selectedTopicId, fetchTopicDetails]);
 
   const value = {
     topics,
