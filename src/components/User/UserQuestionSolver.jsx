@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useFirestore } from '../../context/FirestoreContext';
 
 function UserQuestionSolver() {
-  const { loading, selectedQuestion, selectingQuestionLoading, setSelectedQuestion, updateUserQuestion } = useFirestore();
+  const { loading, selectedQuestion, selectingQuestionLoading, updateUserQuestion } = useFirestore();
   const [codes, setCodes] = useState(['']);
   const [notes, setNotes] = useState('');
   const [activeTab, setActiveTab] = useState('notes');

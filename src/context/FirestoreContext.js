@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { collection, getDocs, setDoc, updateDoc, deleteDoc, doc, query, orderBy, deleteField, getDoc } from 'firebase/firestore';
+import { collection, getDocs, setDoc, updateDoc, deleteDoc, doc, deleteField, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useFirebase } from './FirebaseContext';
 
@@ -7,7 +7,7 @@ const FirestoreContext = createContext();
 export const useFirestore = () => useContext(FirestoreContext);
 
 export const FirestoreProvider = ({ children }) => {
-  const { user, setUserData, userData } = useFirebase();
+  const { user, userData } = useFirebase();
   const [loading, setLoading] = useState(true);
   const [selectingQuestionLoading, setSelectingQuestionLoading] = useState(true);
   const [goal, setGoal] = useState(null);
@@ -306,6 +306,7 @@ export const FirestoreProvider = ({ children }) => {
     }
   }, [userData]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const loadTopics = async () => {
       if (!userData || !goal || !user?.uid) {
@@ -313,20 +314,23 @@ export const FirestoreProvider = ({ children }) => {
       }
 
       const topicsData = await fetchTopicNames();
-      await fetchAllTopicsProgress(topicsData); // 🔥 ADD THIS
+      await fetchAllTopicsProgress(topicsData);
 
       const lastTopicForGoal = userData.lastTopic?.[goal];
       const validTopicId = topicsData.some(t => t.id === lastTopicForGoal)
         ? lastTopicForGoal
         : topicsData[0]?.id;
 
-      setSelectedTopicId(validTopicId);
-      await fetchTopicDetails(validTopicId);
+      setSelectedTopicId(prev => {
+        if (prev === validTopicId) return prev; // 🛑 prevent re-render loop
+        return validTopicId;
+      });
     };
 
     loadTopics();
   }, [goal, userData, user?.uid]);
 
+ // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!selectedTopicId) return;
     setTopicProgress({});
